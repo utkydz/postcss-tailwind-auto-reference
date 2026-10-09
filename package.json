@@ -1,0 +1,64 @@
+{
+  "name": "postcss-tailwind-auto-reference",
+  "version": "0.1.0",
+  "description": "PostCSS plugin that adds Tailwind CSS v4 `@reference` to CSS/SCSS modules automatically, so `@apply` just works.",
+  "keywords": [
+    "postcss",
+    "postcss-plugin",
+    "tailwindcss",
+    "tailwind",
+    "reference",
+    "apply",
+    "css-modules",
+    "scss"
+  ],
+  "homepage": "https://github.com/utkydz/postcss-tailwind-auto-reference#readme",
+  "bugs": "https://github.com/utkydz/postcss-tailwind-auto-reference/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/utkydz/postcss-tailwind-auto-reference.git"
+  },
+  "license": "MIT",
+  "author": "Utku H. YILDIZ",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.cts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepublishOnly": "tsc --noEmit && vitest run && tsdown"
+  },
+  "peerDependencies": {
+    "postcss": "^8.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "20.19.43",
+    "postcss": "8.5.29",
+    "prettier": "3.9.9",
+    "tailwindcss": "4.3.3",
+    "tsdown": "0.23.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}
