@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-import type { PluginCreator, Root } from 'postcss'
+import type { AtRule, ChildNode, PluginCreator, Root } from 'postcss'
 
 // Types live on the plugin's namespace so the CJS build can use `export =`.
 declare namespace tailwindAutoReference {
@@ -32,7 +32,25 @@ const TAILWIND_AT_RULES = new Set(['apply', 'variant'])
 const TAILWIND_FUNCTION = /(?:^|[^\w-])(?:theme|--theme|--spacing|--alpha)\(/
 const TAILWIND_IMPORT = /^(?:url\()?\s*['"]tailwindcss(?:\/[^'"]*)?['"]/
 
-const toPosix = (file: string) => file.split(path.sep).join('/')
+// Turbopack hands Sass/Less output to PostCSS as `a.scss.css` and
+// `a.module.scss.module.css`. Filters should see the real file name.
+const TURBOPACK_SUFFIX = /(\.(?:s[ac]ss|less|styl(?:us)?))(?:\.module)?\.css$/
+
+// @tailwindcss/postcss skips its `@property` fallback only for `.module.css`.
+// Other CSS modules (`.module.scss`, ...) get global `*` / `:root` rules that
+// pure CSS Modules (Next.js webpack) reject.
+const CSS_MODULE = /\.module\.[^./]+$/
+const POLYFILL_SELECTORS = new Set([
+  '*,:before,:after,::backdrop',
+  ':root,:host'
+])
+
+// Bundlers and `process.cwd()` may disagree on the Windows drive letter case.
+const toPosix = (file: string) =>
+  file
+    .split(path.sep)
+    .join('/')
+    .replace(/^[a-z]:/, (drive) => drive.toUpperCase())
 
 const toMatchers = (
   filters: FileFilter | FileFilter[],
@@ -86,6 +104,35 @@ const usesTailwind = (css: Root) => {
   return found
 }
 
+const isPolyfillRule = (node: ChildNode) =>
+  node.type === 'rule' &&
+  POLYFILL_SELECTORS.has(
+    node.selector.replace(/\s+/g, '').replace(/::(before|after)/g, ':$1')
+  )
+
+const isPolyfillLayer = (layer: AtRule) =>
+  !!layer.nodes?.length &&
+  layer.nodes.every(
+    (node) =>
+      node.type === 'atrule' &&
+      node.name === 'supports' &&
+      !!node.nodes?.length &&
+      node.nodes.every(isPolyfillRule)
+  )
+
+const removePropertyPolyfill = (css: Root) => {
+  const layers: AtRule[] = []
+
+  css.walkAtRules('layer', (layer) => {
+    if (layer.params === 'properties') layers.push(layer)
+  })
+
+  if (!layers.some(isPolyfillLayer)) return
+
+  for (const layer of layers)
+    if (!layer.nodes || isPolyfillLayer(layer)) layer.remove()
+}
+
 const tailwindAutoReference: PluginCreator<tailwindAutoReference.Options> = (
   options
 ) => {
@@ -98,32 +145,52 @@ const tailwindAutoReference: PluginCreator<tailwindAutoReference.Options> = (
   if (!existsSync(entry))
     throw new Error(`[${PLUGIN_NAME}] Entry stylesheet not found: ${entry}`)
 
+  const entryPosix = toPosix(entry)
+
   const include = toMatchers(options.include ?? root, root)
   const exclude = toMatchers(options.exclude ?? /\/node_modules\//, root)
 
   return {
     postcssPlugin: PLUGIN_NAME,
 
-    Once(css, { AtRule }) {
-      const input = css.source?.input.file?.replace(/\?.*$/, '')
-      if (!input || path.resolve(input) === entry) return
+    prepare() {
+      let input: string | undefined
 
-      const file = toPosix(path.resolve(input))
-      if (!include.some((match) => match(file))) return
-      if (exclude.some((match) => match(file))) return
+      return {
+        Once(css) {
+          const file = css.source?.input.file
+            ?.replace(/\?.*$/, '')
+            .replace(TURBOPACK_SUFFIX, '$1')
+          if (!file) return
 
-      if (hasOwnTailwindContext(css)) return
-      if (!options.always && !usesTailwind(css)) return
+          const posix = toPosix(path.resolve(file))
+          if (posix === entryPosix) return
+          if (!include.some((match) => match(posix))) return
+          if (exclude.some((match) => match(posix))) return
 
-      const relative = path.relative(path.dirname(input), entry)
-      let reference = toPosix(relative)
+          input = file
 
-      if (!path.isAbsolute(relative) && !/^\.\.?\//.test(reference))
-        reference = `./${reference}`
+          if (hasOwnTailwindContext(css)) return
+          if (!options.always && !usesTailwind(css)) return
 
-      css.prepend(
-        new AtRule({ name: 'reference', params: JSON.stringify(reference) })
-      )
+          const relative = path.relative(path.dirname(file), entry)
+          let reference = toPosix(relative)
+
+          if (!path.isAbsolute(relative) && !/^\.\.?\//.test(reference))
+            reference = `./${reference}`
+
+          css.prepend({ name: 'reference', params: JSON.stringify(reference) })
+        },
+
+        OnceExit(css, { result }) {
+          if (
+            input &&
+            CSS_MODULE.test(input) &&
+            !result.opts.from?.endsWith('.module.css')
+          )
+            removePropertyPolyfill(css)
+        }
+      }
     }
   }
 }

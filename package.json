@@ -46,16 +46,19 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepublishOnly": "tsc --noEmit && vitest run && tsdown"
+    "lint:pkg": "publint --pack npm && attw --pack .",
+    "prepublishOnly": "tsc --noEmit && vitest run && tsdown && publint --pack npm && attw --pack ."
   },
   "peerDependencies": {
     "postcss": "^8.4.0"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "20.19.43",
     "postcss": "8.5.29",
     "prettier": "3.9.9",
+    "publint": "0.3.25",
     "tailwindcss": "4.3.3",
     "tsdown": "0.23.0",
     "typescript": "7.0.2",

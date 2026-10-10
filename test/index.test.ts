@@ -136,6 +136,24 @@ describe('filters', () => {
   })
 })
 
+describe('Turbopack file names', () => {
+  it.each([
+    ['components/a.module.scss.module.css', /\.module\.scss$/],
+    ['components/a.scss.css', /components\/a\.scss$/],
+    ['components/a.module.less.module.css', /\.module\.less$/]
+  ])('filters see %s by its real name', async (from, include) => {
+    expect(await run(APPLY, from, { include })).toMatch(
+      /^@reference "\.\.\/styles\/main\.css";/
+    )
+  })
+
+  it('keeps plain .css names', async () => {
+    expect(
+      await run(APPLY, 'components/a.module.css', { include: /\.css$/ })
+    ).toMatch(/^@reference /)
+  })
+})
+
 describe('options', () => {
   it('requires entry', () => {
     expect(() => autoReference({} as Options)).toThrow(/`entry` option/)
@@ -165,5 +183,97 @@ describe('with @tailwindcss/postcss', () => {
     expect(css).toContain('display: flex')
     expect(css).toContain('color: var(--color-red-500')
     expect(css).not.toContain('@reference')
+  })
+})
+
+describe('@property fallback in CSS modules', () => {
+  const POLYFILL = /\*,\s*:{1,2}before,\s*:{1,2}after,\s*::backdrop/
+
+  const compile = (
+    plugins: postcss.AcceptedPlugin[],
+    from: string,
+    css = '.btn { @apply font-semibold shadow-md; }',
+    optimize = false
+  ) =>
+    postcss([...plugins, tailwindcss({ base: root, optimize })])
+      .process(css, { from: path.join(root, from) })
+      .then((result) => result.css)
+
+  it('is emitted by Tailwind for .module.scss', async () => {
+    const css = await compile(
+      [],
+      'components/button.module.scss',
+      `@reference "../styles/main.css";\n.btn { @apply font-semibold; }`
+    )
+
+    expect(css).toMatch(POLYFILL)
+  })
+
+  it.each([false, true])(
+    'is removed from .module.scss (optimize: %s)',
+    async (optimize) => {
+      const css = await compile(
+        [autoReference({ entry, root })],
+        'components/button.module.scss',
+        undefined,
+        optimize
+      )
+
+      expect(css).not.toMatch(POLYFILL)
+      expect(css).not.toMatch(/:root,\s*:host/)
+      expect(css).not.toContain('@layer properties')
+      expect(css).toMatch(/font-weight:\s*var\(--font-weight-semibold/)
+      expect(css).toContain('@property --tw-font-weight')
+    }
+  )
+
+  it('is removed when the module has its own @reference', async () => {
+    const css = await compile(
+      [autoReference({ entry, root })],
+      'components/button.module.sass',
+      `@reference "../styles/main.css";\n.btn { @apply font-semibold; }`
+    )
+
+    expect(css).not.toMatch(POLYFILL)
+  })
+
+  it('is left to Tailwind for Turbopack module names', async () => {
+    const css = await compile(
+      [autoReference({ entry, root })],
+      'components/button.module.scss.module.css'
+    )
+
+    expect(css).not.toMatch(POLYFILL)
+    expect(css).toMatch(/font-weight:\s*var\(--font-weight-semibold/)
+  })
+
+  it('is kept outside CSS modules', async () => {
+    const css = await compile(
+      [autoReference({ entry, root })],
+      'components/button.scss'
+    )
+
+    expect(css).toMatch(POLYFILL)
+  })
+
+  it('is kept in excluded files', async () => {
+    const css = await compile(
+      [autoReference({ entry, root, exclude: 'components' })],
+      'components/button.module.scss',
+      `@reference "../styles/main.css";\n.btn { @apply font-semibold; }`
+    )
+
+    expect(css).toMatch(POLYFILL)
+  })
+
+  it('keeps user-written properties layers', async () => {
+    const css = await compile(
+      [autoReference({ entry, root })],
+      'components/button.module.scss',
+      '@layer properties { .keep { color: red; } }\n.btn { @apply font-semibold; }'
+    )
+
+    expect(css).not.toMatch(POLYFILL)
+    expect(css).toMatch(/@layer properties\s*{\s*\.keep/)
   })
 })

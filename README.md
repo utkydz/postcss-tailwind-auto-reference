@@ -42,7 +42,7 @@ export default config
 
 Works with both Turbopack and webpack (`next build --webpack`).
 
-### Other PostCSS setups
+### Vite and other PostCSS setups
 
 ```js
 // postcss.config.mjs
@@ -53,6 +53,8 @@ export default {
   plugins: [autoReference({ entry: 'src/styles/main.css' }), tailwindcss()]
 }
 ```
+
+With Vite, use `@tailwindcss/postcss` as above instead of `@tailwindcss/vite`. The Vite plugin compiles CSS before PostCSS runs, so the reference would arrive too late.
 
 ## Options
 
@@ -69,6 +71,8 @@ A `FileFilter` is one of:
 - a `string`: a directory or file, relative to `root` (`'src/components'`)
 - a `RegExp`, tested against the absolute path with forward slashes (`/\.module\.s?css$/`)
 - a function `(file: string) => boolean` that receives the same path
+
+Filters see the real source file. Turbopack hands Sass output to PostCSS as `a.module.scss.module.css`, but `/\.module\.scss$/` still matches it.
 
 ## How it decides
 
@@ -90,9 +94,26 @@ Two Tailwind v4 + Sass gotchas, unrelated to this plugin:
 - `@apply flex #{!important}` fails. Write `@apply flex!` instead.
 - Don't nest `@variant` inside SCSS rules. Sass hoists it and the output is wrong. Use `&:hover { ... }` or `@apply hover:...`.
 
-## Known limitations
+## `.module.scss` and "Selector is not pure"
 
-- **Next.js webpack production builds:** utilities that rely on registered `--tw-*` properties (`font-semibold`, `shadow-*`, `ring-*`, transforms, gradients, …) emit a `*, ::before, ::after, ::backdrop` fallback that Next's CSS Modules rejects as "not pure". A hand-written `@reference` fails the same way; Turbopack isn't affected.
+Utilities that use registered `--tw-*` properties (`font-semibold`, `shadow-*`, `ring-*`, transforms, gradients, …) make Tailwind emit an `@property` fallback for older browsers: a global `*, ::before, ::after, ::backdrop` rule. `@tailwindcss/postcss` leaves it out for `.module.css` files, but only checks that extension, so `.module.scss`, `.module.sass` and `.module.less` still get it, and pure CSS Modules (e.g. Next.js webpack builds) fail with:
+
+```
+Selector "*,:before,:after,::backdrop" is not pure
+```
+
+For CSS modules that `include`/`exclude` allow, this plugin removes that fallback after Tailwind runs. The output then matches what Tailwind produces for `.module.css`. Your entry stylesheet and global stylesheets keep it.
+
+Turbopack never hits this: it renames Sass output to `.module.css`, so Tailwind handles it there.
+
+## Compatibility
+
+Tested with:
+
+- Tailwind CSS 4.3 and PostCSS 8.5
+- Next.js 16.4 (Turbopack and webpack)
+- Vite 8.3 (with `@tailwindcss/postcss`)
+- Node.js 20, 22 and 24
 
 ## TypeScript
 
@@ -102,6 +123,16 @@ Types are included. Option types live on the default export:
 import autoReference from 'postcss-tailwind-auto-reference'
 
 const options: autoReference.Options = { entry: 'src/styles/main.css' }
+```
+
+## Development
+
+```sh
+bun install
+bun run test       # vitest
+bun run typecheck
+bun run build      # tsdown → dist/
+bun run lint:pkg   # publint + arethetypeswrong
 ```
 
 ## License
