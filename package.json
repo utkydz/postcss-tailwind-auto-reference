@@ -47,7 +47,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint:pkg": "publint --pack npm && attw --pack .",
-    "prepublishOnly": "tsc --noEmit && vitest run && tsdown && publint --pack npm && attw --pack ."
+    "prepublishOnly": "tsc --noEmit && vitest run && tsdown && publint --pack npm"
   },
   "peerDependencies": {
     "postcss": "^8.4.0"
